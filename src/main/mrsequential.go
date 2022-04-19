@@ -64,7 +64,7 @@ func main() {
 	//
 	// call Reduce on each distinct key in intermediate[],
 	// and print the result to mr-out-0.
-	//
+	// intermediate 是已经排序过的
 	i := 0
 	for i < len(intermediate) {
 		j := i + 1
@@ -75,6 +75,7 @@ func main() {
 		for k := i; k < j; k++ {
 			values = append(values, intermediate[k].Value)
 		}
+		// values 的长度就是某个key出现的次数
 		output := reducef(intermediate[i].Key, values)
 
 		// this is the correct format for each line of Reduce output.
