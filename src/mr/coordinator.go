@@ -28,9 +28,11 @@ const (
 )
 
 type Task struct {
-	TaskID     int64
+	TaskID   int64
+	ReduceID int
+	FileName string
+
 	CreateTime time.Time
-	FileName   string
 	TaskType   TaskType
 }
 
