@@ -2,6 +2,9 @@ package mr
 
 import (
 	"fmt"
+	"io/ioutil"
+	"os"
+	"sync"
 	"time"
 )
 import "log"
@@ -34,7 +37,7 @@ func Worker(mapf func(string, string) []KeyValue, reducef func(string, []string)
 		switch taskReply.TaskInfo.TaskType {
 		case Map:
 			fmt.Printf("Do Map Task")
-			doMap(mapf, taskReply.TaskInfo)
+			doMap(mapf, taskReply.TaskInfo, taskReply.nReduce)
 		case Reduce:
 			fmt.Printf("Do Reduce Task")
 			doReduce(reducef, taskReply.TaskInfo)
@@ -49,14 +52,49 @@ func Worker(mapf func(string, string) []KeyValue, reducef func(string, []string)
 }
 
 // mapf的输入是 (fileName, fileContent) 输出KV列表 (word -> 1)
-func doMap(mapf func(string, string) []KeyValue, task Task) {
+func doMap(mapf func(string, string) []KeyValue, task Task, nReduce int) {
 	// 从task中解析 filename
+	fileName := task.FileName
+	file, err := os.Open(fileName)
+	defer file.Close()
+	if err != nil {
+		log.Fatalf("cannot open: %v", fileName)
+	}
 
 	// 根据filename 读取文件内容
+	content, err := ioutil.ReadAll(file)
+	if err != nil {
+		log.Fatalf("cannot read %v", fileName)
+	}
 
 	// 将文件名和文件内容放入 mapf中
+	kva := mapf(fileName, string(content))
 
 	// 从mapf取回结果并且存储中间文件 mr-taskID-reduceID (json 格式)
+	intermediate := make(map[int][]KeyValue, 0)
+	for i := 0; i < nReduce; i++ {
+		intermediate[i] = make([]KeyValue, 0)
+	}
+	for _, kv := range kva {
+		kvList, _ := intermediate[ihash(kv.Key)]
+		kvList = append(kvList, kv)
+	}
+
+	for reduceID, kvs := range intermediate {
+		wg := sync.WaitGroup{}
+		wg.Add(1)
+		go func() {
+			outFileName := fmt.Sprintf("mr-%v-%v", task.TaskID, reduceID)
+			outFile, _ := os.Create(outFileName)
+			defer outFile.Close()
+			for _, kv := range kvs {
+				fmt.Fprintf(outFile, "%v %v", kv.Key, kv.Value)
+			}
+			wg.Done()
+		}()
+		wg.Wait()
+	}
+
 }
 
 // reducef inputs: 一个Key，这个Key对应的value list || return 这个Key出现的次数 = len(values

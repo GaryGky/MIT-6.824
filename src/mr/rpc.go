@@ -9,19 +9,25 @@ package mr
 import "os"
 import "strconv"
 
-// View TaskRequest as HeartBeat
+// from worker to master View TaskRequest as HeartBeat
 type TaskRequest struct {
 }
 
+// from master to worker
 type TaskReply struct {
-	TaskInfo Task
+	PhaseInfo Phase
+	TaskInfo  Task
+	nReduce   int
 }
 
+// from worker to master
 type TaskDoneRequest struct {
 	TaskInfo Task
 }
 
+// from master to worker
 type TaskDoneReply struct {
+	PhaseInfo Phase
 }
 
 // Cook up a unique-ish UNIX-domain socket name
