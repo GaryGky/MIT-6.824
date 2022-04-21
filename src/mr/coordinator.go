@@ -12,6 +12,7 @@ import "net/http"
 
 type TaskType int
 type Phase int
+type TaskStatus int
 
 const (
 	UNKNOWN TaskType = 0
@@ -25,6 +26,11 @@ const (
 	Init        Phase = 0
 	MapPhase    Phase = 1
 	ReducePhase Phase = 2
+)
+
+const (
+	Success TaskStatus = 1
+	Fail    TaskStatus = 2
 )
 
 type Task struct {

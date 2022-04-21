@@ -22,7 +22,8 @@ type TaskReply struct {
 
 // from worker to master
 type TaskDoneRequest struct {
-	TaskInfo Task
+	TaskInfo   Task
+	TaskStatus TaskStatus
 }
 
 // from master to worker

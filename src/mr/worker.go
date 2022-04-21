@@ -37,13 +37,14 @@ func ihash(key string) int {
 func Worker(mapf func(string, string) []KeyValue, reducef func(string, []string) string) {
 	for {
 		taskReply := GetTask()
+		var err error
 		switch taskReply.TaskInfo.TaskType {
 		case Map:
 			fmt.Printf("Do Map Task")
-			doMap(mapf, taskReply.TaskInfo, taskReply.nReduce)
+			err = doMap(mapf, taskReply.TaskInfo, taskReply.nReduce)
 		case Reduce:
 			fmt.Printf("Do Reduce Task")
-			doReduce(reducef, taskReply.TaskInfo)
+			err = doReduce(reducef, taskReply.TaskInfo)
 		case Wait:
 			fmt.Printf("Do Wait ")
 			time.Sleep(time.Second * 1)
@@ -51,6 +52,17 @@ func Worker(mapf func(string, string) []KeyValue, reducef func(string, []string)
 			fmt.Printf("All task Done")
 			return
 		}
+		var taskStatus TaskStatus
+		if err != nil {
+			taskStatus = Fail
+		} else {
+			taskStatus = Success
+		}
+		taskDoneReq := TaskDoneRequest{
+			TaskInfo:   taskReply.TaskInfo,
+			TaskStatus: taskStatus,
+		}
+		FinishTask(taskDoneReq)
 	}
 }
 
@@ -159,10 +171,9 @@ func GetTask() TaskReply {
 	return taskReply
 }
 
-func FinishTask() TaskDoneReply {
-	taskDoneReq := TaskDoneRequest{}
+func FinishTask(request TaskDoneRequest) TaskDoneReply {
 	taskDoneReply := TaskDoneReply{}
-	call("Coordinator.Done", &taskDoneReq, &taskDoneReply)
+	call("Coordinator.Done", &request, &taskDoneReply)
 	return taskDoneReply
 }
 
