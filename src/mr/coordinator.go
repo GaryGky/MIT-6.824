@@ -32,6 +32,7 @@ type Task struct {
 	ReduceID int
 	FileName string
 
+	AllTaskID  []int64
 	CreateTime time.Time
 	TaskType   TaskType
 }
