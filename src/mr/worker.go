@@ -173,7 +173,7 @@ func GetTask() TaskReply {
 
 func FinishTask(request TaskDoneRequest) TaskDoneReply {
 	taskDoneReply := TaskDoneReply{}
-	call("Coordinator.Done", &request, &taskDoneReply)
+	call("Coordinator.HandleTaskDone", &request, &taskDoneReply)
 	return taskDoneReply
 }
 

@@ -26,6 +26,7 @@ const (
 	Init        Phase = 0
 	MapPhase    Phase = 1
 	ReducePhase Phase = 2
+	FinishPhase Phase = 3
 )
 
 const (
@@ -49,21 +50,26 @@ type Coordinator struct {
 	FileNames    []string
 	NReduce      int
 	ProcessPhase Phase
+	AllTaskID    []int64
 
-	mapTaskReady    map[int]Task
-	mapTaskProgress map[int]Task
+	mapTaskReady    map[int64]Task
+	mapTaskProgress map[int64]Task
+
+	reduceTaskReady  map[int64]Task
+	reduceTaskFinish map[int64]Task
 }
 
 var coordinator *Coordinator
 
-func GetInstance(files []string) *Coordinator {
+func GetInstance() *Coordinator {
 	if coordinator == nil {
 		coordinator = &Coordinator{
-			Lock:            sync.Mutex{},
-			FileNames:       files,
-			ProcessPhase:    Init,
-			mapTaskReady:    make(map[int]Task),
-			mapTaskProgress: make(map[int]Task),
+			Lock:             sync.Mutex{},
+			ProcessPhase:     Init,
+			mapTaskReady:     make(map[int64]Task),
+			mapTaskProgress:  make(map[int64]Task),
+			reduceTaskReady:  make(map[int64]Task),
+			reduceTaskFinish: make(map[int64]Task),
 		}
 	}
 	return coordinator
@@ -74,18 +80,118 @@ func GetInstance(files []string) *Coordinator {
 // nReduce is the number of reduce tasks to use.
 
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
-	c := GetInstance(files)
+	c := GetInstance()
+	c.FileNames = files
 	c.server()
 	return c
 }
 
 func (c *Coordinator) HandleTaskRequest(req *TaskRequest, reply *TaskReply) error {
+	reply.PhaseInfo = c.ProcessPhase
+	reply.nReduce = c.NReduce
+	var task Task
+	switch c.ProcessPhase {
+	case Init:
+		task = Task{
+			TaskType: Wait,
+		}
+	case ReducePhase:
+		// 扫描任务 如果存在超时的任务 则分配给Worker
+		for _, task := range c.reduceTaskReady {
+			if time.Since(task.CreateTime) > time.Second*10 {
+				reply.TaskInfo = Task{
+					TaskID:     task.TaskID,
+					ReduceID:   task.ReduceID,
+					FileName:   task.FileName,
+					AllTaskID:  c.AllTaskID,
+					CreateTime: time.Now(),
+					TaskType:   Reduce,
+				}
+				return nil
+			}
+		}
+
+		// 如果任务已经全部分配出去了 返回wait
+		if len(c.reduceTaskReady) == 0 {
+			task = Task{
+				TaskType: Wait,
+			}
+		}
+
+		// 如果还有任务可以分配 则分配给Worker
+		for _, task := range c.reduceTaskReady {
+			reply.TaskInfo = Task{
+				TaskID:     task.TaskID,
+				ReduceID:   task.ReduceID,
+				FileName:   task.FileName,
+				AllTaskID:  c.AllTaskID,
+				CreateTime: time.Now(),
+				TaskType:   Reduce,
+			}
+			return nil
+		}
+	case MapPhase:
+		for _, task := range c.mapTaskReady {
+			if time.Since(task.CreateTime) > time.Second*10 {
+				reply.TaskInfo = Task{
+					TaskID:     task.TaskID,
+					ReduceID:   task.ReduceID,
+					FileName:   task.FileName,
+					AllTaskID:  c.AllTaskID,
+					CreateTime: time.Now(),
+					TaskType:   Map,
+				}
+				return nil
+			}
+		}
+
+		// 如果任务已经全部分配出去了 返回wait
+		if len(c.mapTaskReady) == 0 {
+			task = Task{
+				TaskType: Wait,
+			}
+		}
+
+		// 如果还有任务可以分配 则分配给Worker
+		for _, task := range c.mapTaskReady {
+			reply.TaskInfo = Task{
+				TaskID:     task.TaskID,
+				ReduceID:   task.ReduceID,
+				FileName:   task.FileName,
+				AllTaskID:  c.AllTaskID,
+				CreateTime: time.Now(),
+				TaskType:   Map,
+			}
+			return nil
+		}
+	case FinishPhase:
+		task = Task{
+			TaskType: Done,
+		}
+	}
+	reply.TaskInfo = task
 	return nil
 }
 
-//
+func (c *Coordinator) HandleTaskDone(req *TaskDoneRequest, reply *TaskDoneReply) error {
+	if req.TaskStatus == Fail {
+		return nil
+	} else {
+		switch req.TaskInfo.TaskType {
+		case Map:
+			if _, ok := c.mapTaskReady[req.TaskInfo.TaskID]; ok {
+				delete(c.mapTaskReady, req.TaskInfo.TaskID)
+			}
+		case Reduce:
+			if _, ok := c.reduceTaskReady[req.TaskInfo.TaskID]; ok {
+				delete(c.reduceTaskReady, req.TaskInfo.TaskID)
+			}
+		}
+	}
+	return nil
+}
+
 // start a thread that listens for RPCs from worker.go
-//
 func (c *Coordinator) server() {
 	rpc.Register(c)
 	rpc.HandleHTTP()
@@ -98,14 +204,7 @@ func (c *Coordinator) server() {
 	go http.Serve(l, nil)
 }
 
-//
-// main/mrcoordinator.go calls Done() periodically to find out
-// if the entire job has finished.
-//
+// Done main/mrcoordinator.go calls Done() periodically to find out if the entire job has finished.
 func (c *Coordinator) Done() bool {
-	ret := false
-
-	// Your code here.
-
-	return ret
+	return c.ProcessPhase == FinishPhase
 }
